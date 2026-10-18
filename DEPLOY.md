@@ -3,6 +3,8 @@
 One small server, Docker Compose, Caddy for automatic HTTPS, the SQLite file on a volume, a nightly backup.
 No Kubernetes, no serverless, no App Runner (closed to new AWS customers).
 
+> **Azure Container Apps**: For deploying to Microsoft Azure Container Apps (ACA) using the serverless container and Azure Files architecture, see the dedicated [DEPLOY-AZURE.md](DEPLOY-AZURE.md) runbook.
+
 **SQLite means exactly one app instance.** Do not scale the `app` service. One 1 vCPU / 1-2 GB server is enough.
 
 Status: the Compose file is validated and the app is tested locally. The Docker image build itself has **not** been run on
