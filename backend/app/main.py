@@ -6,6 +6,7 @@ Needs GEMINI_API_KEY (or OPENROUTER_API_KEY). Without a key the app starts, says
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -23,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.gzip import GZipMiddleware
 
+from .backup_loop import run_backup_once
 from .security_headers import SecurityHeadersMiddleware
 from .sse import StreamHub
 from .client_ip import get_client_ip, get_rate_limit_key
@@ -113,6 +115,8 @@ def create_app(db_path: Optional[str] = None, provider_override=None, self_test_
     worker = Worker(engine)
     nb_per_hour = int(os.environ.get("AASAAN_NB_PER_HOUR", "12"))
     creations: dict[str, list[float]] = {}
+    backup_per_hour = int(os.environ.get("AASAAN_BACKUP_PER_HOUR", "6"))
+    backup_requests: dict[str, list[float]] = {}
     log_ = logging.getLogger("aasaan")
 
     sse_hub = StreamHub()
@@ -570,6 +574,44 @@ def create_app(db_path: Optional[str] = None, provider_override=None, self_test_
         require_admin(request)
         router.revive(body.model)
         return {"killed": sorted(router.killed)}
+
+    @app.post("/api/admin/backup")
+    async def force_backup(request: Request):
+        admin_token = os.environ.get("AASAAN_ADMIN_TOKEN", "").strip()
+        if not admin_token:
+            raise HTTPException(503, "admin token not configured")
+
+        req_token = request.headers.get("x-admin-token", "")
+        if not req_token or not hmac.compare_digest(req_token, admin_token):
+            raise HTTPException(403, "admin token required")
+
+        rate_key = get_rate_limit_key(request)
+        now = time.time()
+        recent = [t for t in backup_requests.get(rate_key, []) if now - t < 3600]
+        if len(recent) >= backup_per_hour:
+            raise HTTPException(429, "Too many backup requests. Please try again later.")
+        backup_requests[rate_key] = recent + [now]
+
+        ok, status_msg, final_path, size_bytes, duration = await run_in_threadpool(
+            run_backup_once, db_path=resolved_db
+        )
+        if not ok:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": status_msg,
+                    "file": final_path.name if final_path else None,
+                    "size": size_bytes,
+                    "duration": round(duration, 3),
+                },
+                status_code=500,
+            )
+        return {
+            "ok": True,
+            "file": final_path.name if final_path else None,
+            "size": size_bytes,
+            "duration": round(duration, 3),
+        }
 
     # ================================================================ frontend
     if FRONTEND.exists():
