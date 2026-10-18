@@ -283,7 +283,6 @@ def create_app(db_path: Optional[str] = None, provider_override=None, self_test_
     @app.get("/api/notebooks/{nid}/cover.svg")
     def notebook_cover(nid: str):
         """Generated cover (deterministic from the title): no network, no model."""
-        from fastapi.responses import Response
         nb = engine.notebook_view(nid)
         return Response(cover_svg(nb["title"], nb.get("goal") or ""), media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=3600"})
 
@@ -387,7 +386,6 @@ def create_app(db_path: Optional[str] = None, provider_override=None, self_test_
 
     @app.get("/api/notebooks/{nid}/resources/{sid}/thumb")
     def resource_thumb(nid: str, sid: str):
-        from fastapi.responses import Response
         png = _res_guard(engine.resource_thumb, nid, sid)
         if not png:
             raise HTTPException(404, "no thumbnail")
